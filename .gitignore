@@ -1,0 +1,8 @@
+build/
+output/*
+!output/.gitkeep
+.vs/
+*.user
+*.suo
+CMakeCache.txt
+CMakeFiles/

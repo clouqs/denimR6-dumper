@@ -1,0 +1,9 @@
+{
+  "name": "ViewData",
+  "pattern": "A4 70 7D BF 00 00 00 00 00 00 00 00 00 00 A0 40 00 00 A0 C0 00 00 00 00 00 00 00 00 CD CC 4C 3F 00 00 00 3F 00 00 80 3E",
+  "anchor_offset": 676,
+  "members": {
+    "CameraPosition": 400,
+    "ViewProjection": 592
+  }
+}

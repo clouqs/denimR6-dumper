@@ -1,0 +1,47 @@
+{
+  "module": "RainbowSix.exe",
+  "signatures": [
+    {
+      "name": "GameManager",
+      "pattern": "48 8B 0D ? ? ? ? 48 85 C9 0F 84 ? ? ? ? 48 8B 01 FF 90 90 00 00 00",
+      "disp_offset": 3,
+      "instr_length": 7,
+      "critical": true
+    },
+    {
+      "name": "NetworkManager",
+      "pattern": "48 8B 05 ? ? ? ? 48 85 C0 0F 84 ? ? ? ? 41 83",
+      "disp_offset": 3,
+      "instr_length": 7,
+      "critical": false
+    },
+    {
+      "name": "ProfileManager",
+      "pattern": "48 8B 05 ? ? ? ? 48 8B 80 10 01 00 00 48 8B 00 48 85 C0",
+      "disp_offset": 3,
+      "instr_length": 7,
+      "critical": false
+    },
+    {
+      "name": "GlowManager",
+      "pattern": "48 8B 0D ? ? ? ? 48 85 C9 74 08 48 89 FA E8",
+      "disp_offset": 3,
+      "instr_length": 7,
+      "critical": false
+    },
+    {
+      "name": "RoundManager",
+      "pattern": "48 8B 05 ? ? ? ? 48 C7 44 24 28 00 00 00 00 F0 41 FF",
+      "disp_offset": 3,
+      "instr_length": 7,
+      "critical": false
+    },
+    {
+      "name": "FovManager",
+      "pattern": "F3 0F 10 05 ? ? ? ? F3 0F 11 05 ? ? ? ? C3 CC",
+      "disp_offset": 4,
+      "instr_length": 8,
+      "critical": false
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "chains": {
+    "GameManager": {
+      "entity_list": 200,
+      "entity_count": 208
+    },
+    "Entity": {
+      "position": 48,
+      "health": 280,
+      "team_id": 312,
+      "name_ptr": 96,
+      "bone_component": 168
+    }
+  },
+  "viewdata": {
+    "CameraPosition": 400,
+    "ViewProjection": 592,
+    "AnchorPattern": 676
+  }
+}
