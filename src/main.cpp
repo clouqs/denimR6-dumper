@@ -206,6 +206,7 @@ int main() {
     dump.version = process.exeVersion();
     dump.sha256 = process.exeSha256();
     dump.timestamp = currentTimestamp();
+    dump.structOffsets = *structOffsets;
     dump.validation = report;
 
     if (!exportDump(dump, outputDir)) {

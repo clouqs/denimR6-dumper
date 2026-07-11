@@ -1,5 +1,6 @@
 #include "exporter.h"
 #include "json_util.h"
+#include "scanner.h"
 
 #include <filesystem>
 #include <fstream>
@@ -55,19 +56,19 @@ void writeJson(const DumpResult& dump, const std::filesystem::path& path) {
 
     out << "  \"viewdata\": {\n";
     out << "    \"base\": \"" << hexRva(dump.validation.viewData.baseAddress) << "\",\n";
-    out << "    \"CameraPosition\": \"" << hexOffset(0x190) << "\",\n";
-    out << "    \"ViewProjection\": \"" << hexOffset(0x250) << "\",\n";
-    out << "    \"AnchorPattern\": \"" << hexOffset(0x2A4) << "\"\n";
+    out << "    \"CameraPosition\": \"" << hexOffset(dump.structOffsets.viewCameraPosition) << "\",\n";
+    out << "    \"ViewProjection\": \"" << hexOffset(dump.structOffsets.viewProjection) << "\",\n";
+    out << "    \"AnchorPattern\": \"" << hexOffset(dump.structOffsets.viewAnchorPattern) << "\"\n";
     out << "  },\n";
 
     out << "  \"structs\": {\n";
-    out << "    \"GameManager_EntityList\": \"" << hexOffset(0xC8) << "\",\n";
-    out << "    \"GameManager_EntityCount\": \"" << hexOffset(0xD0) << "\",\n";
-    out << "    \"Entity_Position\": \"" << hexOffset(0x30) << "\",\n";
-    out << "    \"Entity_Health\": \"" << hexOffset(0x118) << "\",\n";
-    out << "    \"Entity_TeamId\": \"" << hexOffset(0x138) << "\",\n";
-    out << "    \"Entity_NamePtr\": \"" << hexOffset(0x60) << "\",\n";
-    out << "    \"Entity_BoneComponent\": \"" << hexOffset(0xA8) << "\"\n";
+    out << "    \"GameManager_EntityList\": \"" << hexOffset(dump.structOffsets.gmEntityList) << "\",\n";
+    out << "    \"GameManager_EntityCount\": \"" << hexOffset(dump.structOffsets.gmEntityCount) << "\",\n";
+    out << "    \"Entity_Position\": \"" << hexOffset(dump.structOffsets.entityPosition) << "\",\n";
+    out << "    \"Entity_Health\": \"" << hexOffset(dump.structOffsets.entityHealth) << "\",\n";
+    out << "    \"Entity_TeamId\": \"" << hexOffset(dump.structOffsets.entityTeamId) << "\",\n";
+    out << "    \"Entity_NamePtr\": \"" << hexOffset(dump.structOffsets.entityNamePtr) << "\",\n";
+    out << "    \"Entity_BoneComponent\": \"" << hexOffset(dump.structOffsets.entityBoneComponent) << "\"\n";
     out << "  },\n";
 
     out << "  \"validation\": {\n";
@@ -104,18 +105,18 @@ void writeHeader(const DumpResult& dump, const std::filesystem::path& path) {
     }
 
     out << "\n    // ViewData struct members (base found at runtime via heap scan)\n";
-    out << "    static inline constexpr uint32_t ViewData_CameraPosition = 0x190;\n";
-    out << "    static inline constexpr uint32_t ViewData_ViewProjection = 0x250;\n";
-    out << "    static inline constexpr uint32_t ViewData_AnchorPattern = 0x2A4;\n\n";
+    out << "    static inline constexpr uint32_t ViewData_CameraPosition = " << hexOffset(dump.structOffsets.viewCameraPosition) << ";\n";
+    out << "    static inline constexpr uint32_t ViewData_ViewProjection = " << hexOffset(dump.structOffsets.viewProjection) << ";\n";
+    out << "    static inline constexpr uint32_t ViewData_AnchorPattern = " << hexOffset(dump.structOffsets.viewAnchorPattern) << ";\n\n";
 
     out << "    // Entity struct members (semi-static — update structs/offsets.json on patch)\n";
-    out << "    static inline constexpr uint32_t GameManager_EntityList = 0xC8;\n";
-    out << "    static inline constexpr uint32_t GameManager_EntityCount = 0xD0;\n";
-    out << "    static inline constexpr uint32_t Entity_Position = 0x30;\n";
-    out << "    static inline constexpr uint32_t Entity_Health = 0x118;\n";
-    out << "    static inline constexpr uint32_t Entity_TeamId = 0x138;\n";
-    out << "    static inline constexpr uint32_t Entity_NamePtr = 0x60;\n";
-    out << "    static inline constexpr uint32_t Entity_BoneComponent = 0xA8;\n";
+    out << "    static inline constexpr uint32_t GameManager_EntityList = " << hexOffset(dump.structOffsets.gmEntityList) << ";\n";
+    out << "    static inline constexpr uint32_t GameManager_EntityCount = " << hexOffset(dump.structOffsets.gmEntityCount) << ";\n";
+    out << "    static inline constexpr uint32_t Entity_Position = " << hexOffset(dump.structOffsets.entityPosition) << ";\n";
+    out << "    static inline constexpr uint32_t Entity_Health = " << hexOffset(dump.structOffsets.entityHealth) << ";\n";
+    out << "    static inline constexpr uint32_t Entity_TeamId = " << hexOffset(dump.structOffsets.entityTeamId) << ";\n";
+    out << "    static inline constexpr uint32_t Entity_NamePtr = " << hexOffset(dump.structOffsets.entityNamePtr) << ";\n";
+    out << "    static inline constexpr uint32_t Entity_BoneComponent = " << hexOffset(dump.structOffsets.entityBoneComponent) << ";\n";
     out << "};\n";
 }
 

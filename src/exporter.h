@@ -10,6 +10,7 @@ struct DumpResult {
     std::string version;
     std::string sha256;
     std::string timestamp;
+    StructOffsets structOffsets{};
     ValidationReport validation;
 };
 
