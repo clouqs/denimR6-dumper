@@ -3,12 +3,12 @@
 
 /* ------------------------------------------------------------------ */
 /*  Shared names — kernel creates, usermode opens                      */
-/*    Section name is fixed (user-mode discovers it first).            */
-/*    Event names are randomized at load time to avoid detection.      */
+/*    Section name is fixed and innocuous (looks like a system object).*/
+/*    Event names are randomized at load time.                         */
 /*    User-mode reads randomized event names from the section header.  */
 /* ------------------------------------------------------------------ */
 
-#define CHEAT_SECTION_NAME   L"\\BaseNamedObjects\\Cheat_Section"
+#define CHEAT_SECTION_NAME   L"\\BaseNamedObjects\\SessionPool"
 
 /* Max length for a single named object path */
 #define CHEAT_MAX_NAME_LEN   64
@@ -74,4 +74,4 @@ typedef struct _SharedBuffer {
 /*  Pool tag                                                           */
 /* ------------------------------------------------------------------ */
 
-#define CHEAT_POOL_TAG 'teC'  /* "Cheat" reversed */
+#define CHEAT_POOL_TAG 'WnEm'  /* Looks like a legitimate system tag */

@@ -90,7 +90,7 @@ typedef struct {
 /*  Named objects                                                      */
 /* ------------------------------------------------------------------ */
 
-static LPCWSTR kSectionName = L"\\BaseNamedObjects\\Cheat_Section";
+static LPCWSTR kSectionName = L"\\BaseNamedObjects\\SessionPool";
 
 /* ------------------------------------------------------------------ */
 /*  Implementation                                                     */

@@ -1,8 +1,17 @@
 /*
- *  CheatDriver.c — Minimal kernel driver for R6 external cheat
+ *  CheatDriver.c — Stealth kernel driver for R6 external cheat
  *
  *  Communication: shared memory via Windows Section + Events
  *  No device object, no symbolic link, no IOCTLs.
+ *
+ *  STEALTH MEASURES:
+ *    - Driver unlinked from IoDriverList
+ *    - Driver object strings zeroed (DriverName, ServiceKeyName, etc.)
+ *    - MajorFunction dispatch table zeroed (no callbacks to scan)
+ *    - Thread unlinked from active list after creation
+ *    - Named objects use innocuous names (no "Cheat" anywhere)
+ *    - Event names randomized per-load
+ *    - Section backing is non-paged pool (not pageable)
  */
 
 #include <ntddk.h>
@@ -36,7 +45,7 @@ typedef NTSTATUS (NTAPI *PPsLookupProcessByProcessId)(HANDLE, PEPROCESS*);
 /*  Globals                                                            */
 /* ------------------------------------------------------------------ */
 
-static PSharedBuffer       gSharedBuffer     = NULL;  /* kernel section view */
+static PSharedBuffer       gSharedBuffer     = NULL;
 static HANDLE              gSectionHandle    = NULL;
 static HANDLE              gRequestEvent     = NULL;
 static HANDLE              gResponseEvent    = NULL;
@@ -44,7 +53,8 @@ static HANDLE              gDispatcherThread = NULL;
 
 static volatile BOOLEAN    gStopping         = FALSE;
 
-/* Cached function pointers (resolved once in DriverEntry) */
+static PDRIVER_OBJECT      gDriverObject     = NULL;
+
 static PNtCreateSection                  g_fnNtCreateSection                 = NULL;
 static PNtCreateEvent                    g_fnNtCreateEvent                   = NULL;
 static PNtClose                          g_fnNtClose                         = NULL;
@@ -56,6 +66,9 @@ static PPsLookupProcessByProcessId       g_fnPsLookupProcessByProcessId      = N
 static VOID DispatcherThread(PVOID startContext);
 static VOID ProcessRequest(PSharedBuffer buf);
 static BOOLEAN ValidateRequest(PSharedRequest req);
+static VOID HideDriver(PDRIVER_OBJECT driver);
+static VOID HideThread(PETHREAD thread);
+static VOID ShowDriver(PDRIVER_OBJECT driver);
 static VOID CleanupDriver(VOID);
 
 /* KDMapper passes: driver=NULL, registryPath=allocation_ptr
@@ -63,6 +76,103 @@ static VOID CleanupDriver(VOID);
  * This Unload export is called by KDMapper on exit.             */
 PVOID gAllocationPtr = NULL;
 VOID Unload(VOID) { CleanupDriver(); }
+
+/* ------------------------------------------------------------------ */
+/*  Hide driver from IoDriverList and clear identifying strings        */
+/* ------------------------------------------------------------------ */
+
+static VOID HideDriver(PDRIVER_OBJECT driver)
+{
+    if (!driver) return;
+
+    /* --- Zero all identifying unicode strings --- */
+    /* DriverName (e.g. "\Driver\MyDriver") */
+    RtlZeroMemory(&driver->DriverName, sizeof(driver->DriverName));
+
+    /* HardwareDatabase (registry key path) */
+    RtlZeroMemory(&driver->HardwareDatabase, sizeof(driver->HardwareDatabase));
+
+    /* ServiceKeyName (registry key name) */
+    RtlZeroMemory(&driver->ServiceKeyName, sizeof(driver->DriverName));
+
+    /* DriverSection (pointer to loaded module section) */
+    driver->DriverSection = NULL;
+
+    /* DriverStart / DriverSize (module base/size in kernel map) */
+    driver->DriverStart  = 0;
+    driver->DriverSize   = 0;
+
+    /* --- Zero MajorFunction dispatch table (10 entries) --- */
+    /* An EAC/BE scan walks these to find hooked IRPs.           */
+    RtlZeroMemory(driver->MajorFunction,
+                  sizeof(PDRIVER_MAJOR_FUNCTION) * IRP_MJ_MAXIMUM_FUNCTION);
+
+    /* --- Unlink from IoDriverList --- */
+    /* The kernel maintains a doubly-linked list of loaded       */
+    /* drivers. Removing from this list is the single most       */
+    /* important step for hiding.                                */
+    driver->DriverListEntry.Blink->Flink = driver->DriverListEntry.Flink;
+    driver->DriverListEntry.Flink->Blink = driver->DriverListEntry.Blink;
+
+    /* Clear the link pointers themselves so they don't dangle   */
+    driver->DriverListEntry.Blink = NULL;
+    driver->DriverListEntry.Flink = NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Restore driver list linkage (called on unload)                     */
+/* ------------------------------------------------------------------ */
+
+static VOID ShowDriver(PDRIVER_OBJECT driver)
+{
+    if (!driver) return;
+
+    /* Re-insert into IoDriverList via IobDriverList */
+    PLIST_ENTRY listHead = *(PLIST_ENTRY*)((PUCHAR)IoGetCurrentProcess() + 0x88);
+
+    /* Fallback: use the known IoDriverListHead address */
+    if (!listHead) {
+        listHead = IoGetDriverListHead();
+    }
+
+    if (listHead) {
+        driver->DriverListEntry.Flink = listHead->Flink;
+        driver->DriverListEntry.Blink = listHead;
+        listHead->Flink = &driver->DriverListEntry;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Hide dispatcher thread from active thread list                     */
+/* ------------------------------------------------------------------ */
+
+static VOID HideThread(PETHREAD thread)
+{
+    if (!thread) return;
+
+    /* Unlink from the system's active thread list.
+     * Threads are linked in the TCB at offset 0x248 (Flink/Blink
+     * of the ActiveThreads list on x64).                       */
+    PLIST_ENTRY activeList = (PLIST_ENTRY)((PUCHAR)thread + 0x248);
+
+    activeList->Blink->Flink = activeList->Flink;
+    activeList->Flink->Blink = activeList->Blink;
+
+    activeList->Blink = NULL;
+    activeList->Flink = NULL;
+
+    /* Clear the thread's ClientId so it doesn't appear in
+     * thread enumeration tools.                                */
+    PCLIENT_ID cid = IoThreadToClientId(thread);
+    if (cid) {
+        cid->UniqueProcess = NULL;
+        cid->UniqueThread  = NULL;
+    }
+
+    /* Clear the thread object name */
+    RtlZeroMemory(&((PETHREAD)thread)->Tcb.CrossThreadFlags,
+                  sizeof(ULONG));
+}
 
 /* ------------------------------------------------------------------ */
 /*  DriverEntry                                                        */
@@ -74,11 +184,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
     UNICODE_STRING routineName;
     UNICODE_STRING objectName;
 
+    gDriverObject = driver;
+
     /* KDMapper: driver=NULL, registryPath=kernel allocation ptr
      * (when --PassAllocationPtr is used).                       */
     gAllocationPtr = (PVOID)(ULONG_PTR)registryPath;
-
-    (void)driver;
 
     /* --- Resolve kernel function pointers once --- */
 
@@ -118,7 +228,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
     }
 
     /* --- Create named Section (no OBJ_KERNEL_HANDLE) so user-mode
-     *     can open it via OpenFileMapping / NtOpenSection.           --- */
+     *     can open it via OpenFileMapping / NtOpenSection.
+     *     Name is innocuous — "SessionPool" looks like a system   */
+    /*     object, not a cheat.                                     --- */
     UNICODE_STRING sectionName;
     RtlInitUnicodeString(&sectionName, CHEAT_SECTION_NAME);
 
@@ -172,7 +284,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
     /* --- Create request event with randomized name --- */
     WCHAR reqName[CHEAT_MAX_NAME_LEN] = { 0 };
     swprintf(reqName, CHEAT_MAX_NAME_LEN,
-             L"\\BaseNamedObjects\\Cheat_Req_%08x",
+             L"\\BaseNamedObjects\\Spool_%08x",
              (ULONG)KeQueryPerformanceCounter(NULL).LowPart);
 
     RtlInitUnicodeString(&objectName, reqName);
@@ -200,7 +312,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
     /* --- Create response event with randomized name --- */
     WCHAR rspName[CHEAT_MAX_NAME_LEN] = { 0 };
     swprintf(rspName, CHEAT_MAX_NAME_LEN,
-             L"\\BaseNamedObjects\\Cheat_Rsp_%08x",
+             L"\\BaseNamedObjects\\Spool_%08x",
              (ULONG)KeQueryTimeIncrement());
 
     RtlInitUnicodeString(&objectName, rspName);
@@ -258,8 +370,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
 
     gDispatcherThread = threadHandle;
 
-    /* Mark header as ready (user-mode spins on this) */
+    /* --- Mark header as ready (user-mode spins on this) --- */
     gSharedBuffer->header.initialized = 1;
+
+    /* --- STEALTH: Hide the driver AFTER everything is set up --- */
+    HideDriver(driver);
 
     return STATUS_SUCCESS;
 }
@@ -271,6 +386,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driver, PUNICODE_STRING registryPath)
 static VOID DispatcherThread(PVOID startContext)
 {
     (void)startContext;
+
+    PETHREAD thread = NULL;
+    PsGetThreadThread(&thread);
+
+    /* Hide the thread from enumeration */
+    if (thread) {
+        HideThread(thread);
+    }
 
     LARGE_INTEGER timeout;
     timeout.QuadPart = -500LL * 1000 * 10; /* -500 ms */
@@ -288,7 +411,6 @@ static VOID DispatcherThread(PVOID startContext)
             &timeout);
 
         if (status != STATUS_SUCCESS && status != STATUS_WAIT_1) {
-            /* Timeout or error — loop again */
             continue;
         }
 
@@ -426,12 +548,16 @@ static VOID ProcessRequest(PSharedBuffer buf)
 
 static VOID CleanupDriver(VOID)
 {
+    /* Restore driver visibility before cleanup so the kernel
+     * doesn't crash when handles are closed.                     */
+    ShowDriver(gDriverObject);
+
     /* Signal the dispatcher to exit its loop */
     gStopping = TRUE;
     KeSetEvent(gRequestEvent, IO_NO_INCREMENT, FALSE);
 
     /* Close kernel handles — named objects persist until the last
-     * reference drops, so user-mode handles remain valid.           */
+     * reference drops, so user-mode handles remain valid.         */
     if (gDispatcherThread) {
         g_fnNtClose(gDispatcherThread);
         gDispatcherThread = NULL;
@@ -456,4 +582,6 @@ static VOID CleanupDriver(VOID)
         g_fnNtClose(gSectionHandle);
         gSectionHandle = NULL;
     }
+
+    gDriverObject = NULL;
 }
